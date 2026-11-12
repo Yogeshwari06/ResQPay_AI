@@ -1,4 +1,4 @@
-import { initializeApp } from 'firebase/app'
+import { getApp, getApps, initializeApp } from 'firebase/app'
 import { getFirestore, collection, query, orderBy, onSnapshot, doc, updateDoc } from 'firebase/firestore'
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth'
 
@@ -11,7 +11,7 @@ const firebaseConfig = {
   appId: process.env.REACT_APP_FIREBASE_APP_ID
 }
 
-const app = initializeApp(firebaseConfig)
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
 export const db = getFirestore(app)
 export const auth = getAuth(app)
 

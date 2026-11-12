@@ -1,24 +1,30 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import StatusBadge from '../components/StatusBadge';
-import { getSystemStatus, startMonitoring, stopMonitoring } from '../services/api';
+import { getSystemStatus, getVideoFeedUrl, startMonitoring, stopMonitoring } from '../services/api';
 
 const Dashboard = () => {
     const [status, setStatus] = useState({
         is_running: false,
         camera_status: 'Idle',
         active_alerts_count: 0,
-        last_alert: null
+        last_alert: null,
+        camera_error: null
     });
+    const [isStarting, setIsStarting] = useState(false);
+    const [isStopping, setIsStopping] = useState(false);
+    const [systemError, setSystemError] = useState('');
+    const [streamError, setStreamError] = useState('');
 
     // State for Emergency Popup
     const [showPopup, setShowPopup] = useState(false);
     const [popupData, setPopupData] = useState(null);
     const [lastProcessedAlertTime, setLastProcessedAlertTime] = useState(0);
 
-    const fetchStatus = async () => {
-        const data = await getSystemStatus();
-        if (data) {
+    const fetchStatus = useCallback(async () => {
+        try {
+            const data = await getSystemStatus();
             setStatus(data);
+            setSystemError('');
 
             // Checks for Critical Alert
             if (data.last_alert && data.last_alert.time > lastProcessedAlertTime) {
@@ -32,23 +38,43 @@ const Dashboard = () => {
                     setLastProcessedAlertTime(data.last_alert.time);
                 }
             }
+        } catch (error) {
+            setSystemError(error.message);
         }
-    };
+    }, [lastProcessedAlertTime]);
 
     useEffect(() => {
         fetchStatus();
         const interval = setInterval(fetchStatus, 1000); // Faster polling for alerts
         return () => clearInterval(interval);
-    }, [lastProcessedAlertTime]);
+    }, [fetchStatus]);
 
     const handleStart = async () => {
-        await startMonitoring();
-        fetchStatus();
+        setIsStarting(true);
+        setSystemError('');
+        setStreamError('');
+        try {
+            await startMonitoring();
+            await fetchStatus();
+        } catch (error) {
+            setSystemError(error.message);
+            await fetchStatus();
+        } finally {
+            setIsStarting(false);
+        }
     };
 
     const handleStop = async () => {
-        await stopMonitoring();
-        fetchStatus();
+        setIsStopping(true);
+        setSystemError('');
+        try {
+            await stopMonitoring();
+            await fetchStatus();
+        } catch (error) {
+            setSystemError(error.message);
+        } finally {
+            setIsStopping(false);
+        }
     };
 
     const closePopup = () => setShowPopup(false);
@@ -88,57 +114,70 @@ const Dashboard = () => {
                 </div>
             )}
 
-            <h1>System Dashboard</h1>
+            <h1>ResQPay AI Dashboard</h1>
 
             <div className="status-panel">
                 <div className="status-item">
                     <h3>System State</h3>
-                    <StatusBadge status={status.is_running ? "Active" : "Idle"} />
+                    <StatusBadge status={
+                        status.is_running
+                            ? "Active"
+                            : ["Connecting", "Stopping", "Error"].includes(status.camera_status)
+                                ? status.camera_status
+                                : "Idle"
+                    } />
                 </div>
                 <div className="status-item">
                     <h3>Camera</h3>
                     <StatusBadge status={status.camera_status} />
+                    {status.camera_error && <p className="form-error">{status.camera_error}</p>}
                 </div>
                 <div className="status-item">
                     <h3>Active Alerts</h3>
                     <span className="count-badge">{status.active_alerts_count}</span>
+                    {status.last_alert && (
+                        <p className="latest-alert">
+                            Latest detection: {Math.round(Number(status.last_alert.score || 0) * 100)}%
+                            {status.last_alert.details?.trigger
+                                ? ` · ${status.last_alert.details.trigger.replace(/_/g, ' ')}`
+                                : ''}
+                        </p>
+                    )}
                 </div>
             </div>
 
+            {systemError && <p className="form-error" role="alert">{systemError}</p>}
             <div className="control-panel">
-                <div className="video-feed-container" style={{ marginBottom: '20px', border: '2px solid #333', borderRadius: '8px', overflow: 'hidden' }}>
-{status.is_running ? (
-    <img
-        src="https://silent-distress-detection.onrender.com/video_feed"
-        alt="Live Camera Feed"
-        style={{
-            width: '100%',
-            maxWidth: '640px',
-            display: 'block',
-            margin: '0 auto'
-        }}
-    />
-) : (
-    <div
-        style={{
-            padding: '40px',
-            textAlign: 'center',
-            background: '#f0f0f0',
-            color: '#666'
-        }}
-    >
-        <p>Camera is Offline. Automatic Privacy Mode Active.</p>
-    </div>
-)}
+                <div className="video-feed-container">
+                    {status.is_running && !streamError ? (
+                        <img
+                            src={getVideoFeedUrl()}
+                            alt="Live camera feed"
+                            onLoad={() => setStreamError('')}
+                            onError={() => setStreamError('The camera is active but the live video stream could not be loaded.')}
+                        />
+                    ) : isStarting || status.camera_status === 'Connecting' ? (
+                        <p className="camera-message" role="status">Connecting to camera…</p>
+                    ) : streamError ? (
+                        <p className="form-error camera-message" role="alert">{streamError}</p>
+                    ) : status.camera_error ? (
+                        <p className="form-error camera-message" role="alert">{status.camera_error}</p>
+                    ) : (
+                        <p className="camera-message">Camera is idle. Start monitoring to connect to the available camera.</p>
+                    )}
                 </div>
 
-                {!status.is_running ? (
-                    <button className="btn btn-primary btn-lg" onClick={handleStart}>
-                        Start Monitoring
+                {status.camera_status === 'Connecting' ? (
+                    <button className="btn btn-danger btn-lg" onClick={handleStop} disabled={isStarting || isStopping}>
+                        {isStarting ? 'Connecting…' : isStopping ? 'Cancelling…' : 'Cancel Connection'}
+                    </button>
+                ) : status.is_running || status.camera_status === 'Stopping' ? (
+                    <button className="btn btn-danger btn-lg" onClick={handleStop} disabled={isStopping || status.camera_status === 'Stopping'}>
+                        {isStopping || status.camera_status === 'Stopping' ? 'Stopping…' : 'Stop Monitoring'}
                     </button>
                 ) : (
-                    <button className="btn btn-danger btn-lg" onClick={handleStop}>
-                        Stop Monitoring
+                    <button className="btn btn-primary btn-lg" onClick={handleStart} disabled={isStarting}>
+                        {isStarting ? 'Starting…' : 'Start Monitoring'}
                     </button>
                 )}
             </div>

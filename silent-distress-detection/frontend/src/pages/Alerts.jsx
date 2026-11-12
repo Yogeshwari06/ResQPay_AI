@@ -1,54 +1,62 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import AlertCard from '../components/AlertCard';
-
-const API_URL = "https://silent-distress-detection.onrender.com";
+import StaffAccess from '../components/StaffAccess';
+import { apiRequest } from '../services/api';
 const Alerts = () => {
     const [alerts, setAlerts] = useState([]);
+    const [user, setUser] = useState(null);
+    const [error, setError] = useState('');
+    const onUserChange = useCallback((activeUser) => setUser(activeUser), []);
 
-    const fetchAlerts = async () => {
-        try {
-            // Fetch from our backend wrapper which simulates/proxies Firestore
-            const res = await fetch(`${API_URL}/alerts`);
-            if (res.ok) {
-                const data = await res.json();
-                setAlerts(data);
-            }
-        } catch (err) {
-            console.error("Failed to fetch alerts", err);
+    const fetchAlerts = useCallback(async () => {
+        if (!user) {
+            setAlerts([]);
+            return;
         }
-    };
+        try {
+            setAlerts(await apiRequest('/api/incidents', {}, true));
+            setError('');
+        } catch (err) {
+            setError(err.message);
+        }
+    }, [user]);
 
     useEffect(() => {
         fetchAlerts();
         const interval = setInterval(fetchAlerts, 3000); // Poll every 3 seconds
         return () => clearInterval(interval);
-    }, []);
+    }, [fetchAlerts]);
 
-    const handleConfirm = (id) => {
-        console.log("Confirmed alert:", id);
-        // In a real app, send API call to update status
-        // For now, optimistically update UI
-        setAlerts(prev => prev.map(a => a.id === id ? { ...a, status: 'confirmed' } : a));
-    };
-
-    const handleDismiss = (id) => {
-        console.log("Dismissed alert:", id);
-        setAlerts(prev => prev.map(a => a.id === id ? { ...a, status: 'dismissed' } : a));
+    const handleVerification = async (id, status) => {
+        try {
+            await apiRequest(`/api/incidents/${encodeURIComponent(id)}/verification`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status }),
+            }, true);
+            await fetchAlerts();
+        } catch (verificationError) {
+            setError(verificationError.message);
+        }
     };
 
     return (
         <div className="page-container">
-            <h1>Live Alerts</h1>
+            <h1>Emergency incidents</h1>
+            <p>Detector output is decision support; a staff member must verify each incident.</p>
+            <StaffAccess onUserChange={onUserChange} />
+            {error && <p className="form-error" role="alert">{error}</p>}
             <div className="alerts-grid">
-                {alerts.length === 0 ? (
+                {!user ? (
+                    <p className="no-data">Sign in to review incidents.</p>
+                ) : alerts.length === 0 ? (
                     <p className="no-data">No alerts detected yet.</p>
                 ) : (
                     alerts.map(alert => (
                         <AlertCard
                             key={alert.id}
                             alert={alert}
-                            onConfirm={handleConfirm}
-                            onDismiss={handleDismiss}
+                            onConfirm={(id) => handleVerification(id, 'confirmed')}
+                            onDismiss={(id) => handleVerification(id, 'dismissed')}
                         />
                     ))
                 )}

@@ -4,7 +4,7 @@ const StatusBadge = ({ status }) => {
     let colorClass = 'badge-gray';
 
     if (status === 'Active') colorClass = 'badge-green';
-    if (status === 'Idle') colorClass = 'badge-yellow';
+    if (status === 'Idle' || status === 'Connecting' || status === 'Stopping') colorClass = 'badge-yellow';
     if (status === 'Error') colorClass = 'badge-red';
 
     // Alert statuses

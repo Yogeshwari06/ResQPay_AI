@@ -2,7 +2,7 @@ import React from 'react';
 import StatusBadge from './StatusBadge';
 
 const AlertCard = ({ alert, onConfirm, onDismiss }) => {
-    const { id, timestamp, location, confidence_score, status, details } = alert;
+    const { id, timestamp, location, confidence_score, status, details = {} } = alert;
 
     const dateStr = new Date(timestamp * 1000).toLocaleString();
 
@@ -15,7 +15,16 @@ const AlertCard = ({ alert, onConfirm, onDismiss }) => {
             <div className="alert-body">
                 <p><strong>Time:</strong> {dateStr}</p>
                 <p><strong>Location:</strong> {location}</p>
-                <p><strong>Confidence:</strong> {(confidence_score * 100).toFixed(1)}%</p>
+                {confidence_score !== undefined && confidence_score !== null && (
+                    <p><strong>Fusion score:</strong> {Number(confidence_score).toFixed(2)}</p>
+                )}
+                {alert.intelligence && (
+                    <div className="incident-intelligence">
+                        <strong>{alert.intelligence.severity} — {alert.intelligence.category}</strong>
+                        <p>{alert.intelligence.explanation}</p>
+                        <small>{alert.intelligence.recommended_response}</small>
+                    </div>
+                )}
                 <div className="alert-details">
                     {details.trigger === "IMPACT_DETECTED" && (
                         <div className="alert-trigger-badge">⚠️ PHYSICAL IMPACT DETECTED ⚠️</div>

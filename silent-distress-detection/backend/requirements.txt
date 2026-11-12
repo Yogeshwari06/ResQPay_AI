@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-opencv-python-headless
+opencv-python-headless>=4.8,<5
 numpy
 firebase-admin
 python-dotenv

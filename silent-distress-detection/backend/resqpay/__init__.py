@@ -1,0 +1,1 @@
+"""ResQPay AI API extensions."""
